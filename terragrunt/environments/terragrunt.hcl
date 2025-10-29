@@ -1,6 +1,12 @@
 # Terragrunt root configuration
 # This file defines common settings for all environments
 
+# Get AWS account ID for unique bucket naming
+locals {
+  aws_account_id = get_aws_account_id()
+  aws_region     = "us-east-1"
+}
+
 # Configure remote state storage
 remote_state {
   backend = "s3"
@@ -9,13 +15,21 @@ remote_state {
     if_exists = "overwrite_terragrunt"
   }
   config = {
-    bucket  = "your-terraform-state-bucket"  # Update with your state bucket
-    key     = "${path_relative_to_include()}/terraform.tfstate"
-    region  = "us-east-1"
-    encrypt = true
+    bucket         = "terraform-state-devops-assignment-${local.aws_account_id}"
+    key            = "${path_relative_to_include()}/terraform.tfstate"
+    region         = local.aws_region
+    encrypt        = true
     
-    # DynamoDB table for state locking
-    dynamodb_table = "terraform-lock-table"
+    # Enable S3 bucket creation
+    s3_bucket_tags = {
+      Name        = "TerraformState"
+      Owner       = "DevOps-Assignment"
+      Terraform   = "true"
+      Environment = "shared"
+    }
+    
+    # DynamoDB table for state locking (will be created automatically)
+    dynamodb_table = "terraform-lock-devops-assignment"
   }
 }
 
@@ -48,5 +62,5 @@ EOF
 
 # Common inputs for all environments
 inputs = {
-  aws_region = "us-east-1"
+  aws_region = local.aws_region
 }
