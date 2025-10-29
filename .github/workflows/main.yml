@@ -76,7 +76,8 @@ jobs:
         echo "🗄️ Using S3 backend for state storage"
         echo "📋 Initializing Terragrunt with S3 backend..."
         
-        terragrunt init --terragrunt-non-interactive
+        # Auto-approve S3 bucket updates
+        echo "y" | terragrunt init --terragrunt-non-interactive || terragrunt init --terragrunt-non-interactive
         terragrunt plan --terragrunt-non-interactive -no-color
       env:
         TF_VAR_bucket_name: "devops-assignment-products-dev"
@@ -90,7 +91,8 @@ jobs:
         echo "🚀 Applying infrastructure changes..."
         echo "🗄️ Using S3 backend for state storage..."
         
-        terragrunt init --terragrunt-non-interactive
+        # Auto-approve S3 bucket updates if needed, then apply
+        echo "y" | terragrunt init --terragrunt-non-interactive || terragrunt init --terragrunt-non-interactive
         terragrunt apply --terragrunt-non-interactive -auto-approve -no-color
     
     - name: 📤 Get Terraform Outputs
@@ -167,7 +169,8 @@ jobs:
         fi
         
         # Initialize with S3 backend and destroy
-        terragrunt init --terragrunt-non-interactive
+        # Initialize with S3 backend and destroy
+        echo "y" | terragrunt init --terragrunt-non-interactive || terragrunt init --terragrunt-non-interactive
         terragrunt destroy --terragrunt-non-interactive -auto-approve -no-color
       env:
         TF_VAR_bucket_name: "devops-assignment-products-dev"

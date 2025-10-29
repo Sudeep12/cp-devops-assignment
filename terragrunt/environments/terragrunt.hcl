@@ -21,7 +21,7 @@ remote_state {
   }
   
   # Disable S3 bucket updates to avoid interactive prompts
-  disable_bucket_update = true
+  # disable_bucket_update = true
 }
 
 # Generate provider configuration
