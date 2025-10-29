@@ -1,0 +1,14 @@
+# Python dependencies for the DevOps assignment
+# Product data processing and AWS S3 operations
+
+# AWS SDK for Python
+boto3>=1.28.0
+
+# HTTP library for API requests
+requests>=2.31.0
+
+# Development and testing dependencies
+pytest>=7.4.0
+pytest-cov>=4.1.0
+black>=23.0.0
+flake8>=6.0.0
