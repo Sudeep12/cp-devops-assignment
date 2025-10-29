@@ -1,21 +1,15 @@
-# Terragrunt root configuration
-# This file defines common settings for all environments
+# Terragrunt root configuration - Local Backend
+# This file defines common settings for all environments using local backend with artifacts
 
-# Configure remote state storage
+# Configure local state storage (no S3 required)
 remote_state {
-  backend = "s3"
+  backend = "local"
   generate = {
     path      = "backend.tf"
     if_exists = "overwrite_terragrunt"
   }
   config = {
-    bucket  = "your-terraform-state-bucket"  # Update with your state bucket
-    key     = "${path_relative_to_include()}/terraform.tfstate"
-    region  = "us-east-1"
-    encrypt = true
-    
-    # DynamoDB table for state locking
-    dynamodb_table = "terraform-lock-table"
+    path = "terraform.tfstate"
   }
 }
 

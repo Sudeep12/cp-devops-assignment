@@ -1,7 +1,7 @@
-# Development Environment Configuration
-# This file deploys the complete infrastructure for the dev environment
+# Development Environment Configuration - Local Backend
+# This file deploys the complete infrastructure for the dev environment using local backend
 
-# Include root terragrunt configuration
+# Include root terragrunt configuration (now uses local backend)
 include "root" {
   path = find_in_parent_folders()
 }
@@ -27,6 +27,6 @@ inputs = {
     Owner       = "Sudeep Shetty"  # Replace with your name
     Terraform   = "true"
     Environment = "dev"
-    Project     = "DevOps-Assignment-CheckPoint"
+    Project     = "DevOps-Assignment"
   }
 }
