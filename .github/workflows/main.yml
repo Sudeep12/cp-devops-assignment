@@ -2,8 +2,9 @@ name: DevOps Assignment CI/CD Pipeline
 
 on:
   push:
-    branches: [main]
-  workflow_dispatch:  # Allow manual 
+    branches: [ main, master ]
+  # Removed pull_request trigger - only run on actual merges to main
+  workflow_dispatch:  # Allow manual triggering
     inputs:
       cleanup:
         description: 'Run cleanup job (destroy infrastructure)'
@@ -56,39 +57,25 @@ jobs:
         sudo mv terragrunt_linux_amd64 /usr/local/bin/terragrunt
         terragrunt --version
     
-    - name: 🗄️ Setup Local Backend with Artifacts
+    - name: 🗄️ Setup S3 Backend
       run: |
-        echo "🗄️ Using local backend with GitHub Actions artifacts for state persistence"
-        echo "This ensures state is preserved between pipeline runs for up to 30 days"
-        echo "✅ State will be available for new pipeline triggers"
-
+        echo "🗄️ Using S3 backend for state storage"
+        echo "📁 Bucket: sudeep-terraform-state"
+        echo "🔒 State will be stored in S3 with encryption enabled"
+        echo "✅ Remote state allows collaboration and persistence"
+    
     - name: 🔍 Terraform Format Check
       run: |
         cd terraform
         terraform fmt -check -recursive
       continue-on-error: true
-
-    - name: 💾 Download Previous State
-      uses: actions/download-artifact@v4
-      with:
-        name: terraform-state
-        path: terragrunt/environments/dev/
-      continue-on-error: true
-
-    - name: 💾 Download Failed State (if no success state found)
-      uses: actions/download-artifact@v4
-      with:
-        name: terraform-state-failed
-        path: terragrunt/environments/dev/
-      continue-on-error: true
     
-    - name: 📋 Terragrunt Plan
+    - name:  Terragrunt Plan
       working-directory: terragrunt/environments/dev
       run: |
-        echo "🗄️ Using local backend with artifact persistence"
-        echo "📋 Initializing Terragrunt with local backend..."
+        echo "🗄️ Using S3 backend for state storage"
+        echo "📋 Initializing Terragrunt with S3 backend..."
         
-        # The main terragrunt.hcl now uses local backend by default
         terragrunt init
         terragrunt plan -no-color
       env:
@@ -101,15 +88,10 @@ jobs:
       working-directory: terragrunt/environments/dev
       run: |
         echo "🚀 Applying infrastructure changes..."
-        echo "🗄️ Using local backend configuration..."
+        echo "🗄️ Using S3 backend for state storage..."
         
-        # The main terragrunt.hcl now uses local backend by default
         terragrunt init
         terragrunt apply -auto-approve -no-color
-      env:
-        TF_VAR_bucket_name: "devops-assignment-products-dev"
-        TF_VAR_distribution_name: "devops-assignment-dev"
-        TF_VAR_environment: "dev"
     
     - name: 📤 Get Terraform Outputs
       id: terraform-output
@@ -126,53 +108,28 @@ jobs:
         echo "Infrastructure outputs:"
         echo "S3 Bucket: ${S3_BUCKET}"
         echo "CloudFront URL: ${CLOUDFRONT_URL}"
-
-    - name: 💾 Upload State File (Success)
-      uses: actions/upload-artifact@v4
-      # Only upload state if apply succeeded
-      if: steps.terragrunt-apply.outcome == 'success'
-      with:
-        name: terraform-state
-        path: |
-          terragrunt/environments/dev/terraform.tfstate
-          terragrunt/environments/dev/.terraform/
-        retention-days: 30
-    
-    - name: ⚠️ Upload State File (Partial Failure)
-      uses: actions/upload-artifact@v4
-      # Upload state even on failure to preserve partial changes for retry
-      if: steps.terragrunt-apply.outcome == 'failure'
-      with:
-        name: terraform-state-failed
-        path: |
-          terragrunt/environments/dev/terraform.tfstate
-          terragrunt/environments/dev/.terraform/
-        retention-days: 7
     
     - name: ❌ Handle Apply Failure
       if: steps.terragrunt-apply.outcome == 'failure'
       run: |
         echo "❌ Terragrunt apply failed!"
-        echo "⚠️ Partial infrastructure may have been created"
-        echo "🗄️ Current state (including partial changes) saved as 'terraform-state-failed'"
-        echo "🔄 On retry, the pipeline will continue from this state"
+        echo "🗄️ S3 backend automatically preserves state up to the point of failure"
+        echo "🔄 On retry, Terraform will continue from the last successful state"
         echo "🔍 Check the apply logs above for error details"
         echo ""
         echo "To retry:"
         echo "1. Fix the underlying issue (permissions, etc.)"
-        echo "2. Re-trigger the workflow"
+        echo "2. Re-trigger the workflow"  
         echo "3. Terraform will detect existing resources and continue"
         exit 1
-  
-  # Job 3: Cleanup (Optional - only on manual trigger)
+
+  # Job 2: Cleanup (Optional - runs on manual trigger)
   cleanup:
     name: 🧹 Cleanup Resources
     runs-on: ubuntu-latest
     needs: [infrastructure]
-    # Run if: (normal cleanup after success) OR (force cleanup even after failure)
-    if: |
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.cleanup == 'true' && needs.infrastructure.result == 'success') ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.force_cleanup == 'true')
+    # Run cleanup when manually triggered
+    if: github.event_name == 'workflow_dispatch' && (github.event.inputs.cleanup == 'true' || github.event.inputs.force_cleanup == 'true')
     
     steps:
     - name: 📥 Checkout Code
@@ -197,49 +154,22 @@ jobs:
         chmod +x terragrunt_linux_amd64
         sudo mv terragrunt_linux_amd64 /usr/local/bin/terragrunt
     
-    - name: 💾 Download Success State
-      uses: actions/download-artifact@v4
-      with:
-        name: terraform-state
-        path: terragrunt/environments/dev/
-      continue-on-error: true
-    
-    - name: 💾 Download Failed State (for force cleanup)
-      uses: actions/download-artifact@v4
-      with:
-        name: terraform-state-failed
-        path: terragrunt/environments/dev/
-      continue-on-error: true
-    
-    - name: ️ Terragrunt Destroy
+    - name: �️ Terragrunt Destroy
       working-directory: terragrunt/environments/dev
       run: |
-        echo "🗑️ Destroying infrastructure using local backend..."
-        echo "🗄️ Using local backend configuration..."
+        echo "🗑️ Destroying infrastructure using S3 backend..."
+        echo "🗄️ S3 backend will automatically retrieve current state..."
         
         if [ "${{ github.event.inputs.force_cleanup }}" == "true" ]; then
-          echo "⚠️  FORCE CLEANUP MODE: Destroying partial/failed infrastructure"
-          echo "🔍 This will clean up any resources that were created before failure"
+          echo "⚠️  FORCE CLEANUP MODE: Destroying infrastructure regardless of previous job status"
         else
           echo "✅ NORMAL CLEANUP MODE: Destroying successfully deployed infrastructure"
         fi
         
-        # Initialize with current state and destroy
+        # Initialize with S3 backend and destroy
         terragrunt init
         terragrunt destroy -auto-approve -no-color
       env:
         TF_VAR_bucket_name: "devops-assignment-products-dev"
         TF_VAR_distribution_name: "devops-assignment-dev"
         TF_VAR_environment: "dev"
-    
-    - name: 🧹 Clean Success State Artifacts
-      uses: geekyeggo/delete-artifact@v5
-      with:
-        name: terraform-state
-      continue-on-error: true
-    
-    - name: 🧹 Clean Failed State Artifacts
-      uses: geekyeggo/delete-artifact@v5
-      with:
-        name: terraform-state-failed
-      continue-on-error: true

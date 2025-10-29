@@ -1,7 +1,7 @@
-# Development Environment Configuration - Local Backend
-# This file deploys the complete infrastructure for the dev environment using local backend
+# Development Environment Configuration - S3 Backend
+# This file deploys the complete infrastructure for the dev environment using S3 backend
 
-# Include root terragrunt configuration (now uses local backend)
+# Include root terragrunt configuration (uses S3 backend: sudeep-terraform-state)
 include "root" {
   path = find_in_parent_folders()
 }
