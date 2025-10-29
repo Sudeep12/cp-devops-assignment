@@ -2,7 +2,12 @@ name: DevOps Assignment CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main]
+    paths-ignore:
+      - 'README.md'
+      - '.github/workflows/**'
+      - 'docs/**'
+      - '*.md'
   # Removed pull_request trigger - only run on actual merges to main
   workflow_dispatch:  # Allow manual triggering
     inputs:
