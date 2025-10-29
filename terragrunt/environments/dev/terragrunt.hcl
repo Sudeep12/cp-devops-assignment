@@ -19,7 +19,7 @@ inputs = {
   bucket_name = "devops-assignment-products-dev"
   
   # CloudFront configuration
-  distribution_name = "devops-assignment-dev"
+  distribution_name = "devops-assignment"
   
   # Common tags for all resources
   common_tags = {
