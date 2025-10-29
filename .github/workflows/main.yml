@@ -10,6 +10,11 @@ on:
         required: false
         default: false
         type: boolean
+      force_cleanup:
+        description: 'Force cleanup even if infrastructure job failed'
+        required: false
+        default: false
+        type: boolean
 
 env:
   AWS_REGION: us-east-1
@@ -62,6 +67,20 @@ jobs:
         cd terraform
         terraform fmt -check -recursive
       continue-on-error: true
+
+    - name: 💾 Download Previous State
+      uses: actions/download-artifact@v4
+      with:
+        name: terraform-state
+        path: terragrunt/environments/dev/
+      continue-on-error: true
+
+    - name: 💾 Download Failed State (if no success state found)
+      uses: actions/download-artifact@v4
+      with:
+        name: terraform-state-failed
+        path: terragrunt/environments/dev/
+      continue-on-error: true
     
     - name: 📋 Terragrunt Plan
       working-directory: terragrunt/environments/dev
@@ -78,6 +97,7 @@ jobs:
         TF_VAR_environment: "dev"
     
     - name: 🚀 Terragrunt Apply
+      id: terragrunt-apply
       working-directory: terragrunt/environments/dev
       run: |
         echo "🚀 Applying infrastructure changes..."
@@ -94,30 +114,65 @@ jobs:
     - name: 📤 Get Terraform Outputs
       id: terraform-output
       working-directory: terragrunt/environments/dev
+      # Only get outputs if apply succeeded
+      if: steps.terragrunt-apply.outcome == 'success'
       run: |
+        echo "Retrieving Terraform outputs..."
         S3_BUCKET=$(terragrunt output -raw s3_bucket_id)
         CLOUDFRONT_URL=$(terragrunt output -raw cloudfront_url)
+        
         echo "s3_bucket_id=${S3_BUCKET}" >> $GITHUB_OUTPUT
         echo "cloudfront_url=${CLOUDFRONT_URL}" >> $GITHUB_OUTPUT
         echo "Infrastructure outputs:"
         echo "S3 Bucket: ${S3_BUCKET}"
         echo "CloudFront URL: ${CLOUDFRONT_URL}"
 
-    - name: 💾 Upload State File
+    - name: 💾 Upload State File (Success)
       uses: actions/upload-artifact@v4
+      # Only upload state if apply succeeded
+      if: steps.terragrunt-apply.outcome == 'success'
       with:
         name: terraform-state
         path: |
           terragrunt/environments/dev/terraform.tfstate
           terragrunt/environments/dev/.terraform/
         retention-days: 30
+    
+    - name: ⚠️ Upload State File (Partial Failure)
+      uses: actions/upload-artifact@v4
+      # Upload state even on failure to preserve partial changes for retry
+      if: steps.terragrunt-apply.outcome == 'failure'
+      with:
+        name: terraform-state-failed
+        path: |
+          terragrunt/environments/dev/terraform.tfstate
+          terragrunt/environments/dev/.terraform/
+        retention-days: 7
+    
+    - name: ❌ Handle Apply Failure
+      if: steps.terragrunt-apply.outcome == 'failure'
+      run: |
+        echo "❌ Terragrunt apply failed!"
+        echo "⚠️ Partial infrastructure may have been created"
+        echo "🗄️ Current state (including partial changes) saved as 'terraform-state-failed'"
+        echo "🔄 On retry, the pipeline will continue from this state"
+        echo "🔍 Check the apply logs above for error details"
+        echo ""
+        echo "To retry:"
+        echo "1. Fix the underlying issue (permissions, etc.)"
+        echo "2. Re-trigger the workflow"
+        echo "3. Terraform will detect existing resources and continue"
+        exit 1
   
   # Job 3: Cleanup (Optional - only on manual trigger)
   cleanup:
     name: 🧹 Cleanup Resources
     runs-on: ubuntu-latest
     needs: [infrastructure]
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.cleanup == 'true'
+    # Run if: (normal cleanup after success) OR (force cleanup even after failure)
+    if: |
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.cleanup == 'true' && needs.infrastructure.result == 'success') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.force_cleanup == 'true')
     
     steps:
     - name: 📥 Checkout Code
@@ -142,18 +197,32 @@ jobs:
         chmod +x terragrunt_linux_amd64
         sudo mv terragrunt_linux_amd64 /usr/local/bin/terragrunt
     
-    - name: � Download Current State
+    - name: 💾 Download Success State
       uses: actions/download-artifact@v4
       with:
         name: terraform-state
         path: terragrunt/environments/dev/
       continue-on-error: true
     
-    - name: �🗑️ Terragrunt Destroy
+    - name: 💾 Download Failed State (for force cleanup)
+      uses: actions/download-artifact@v4
+      with:
+        name: terraform-state-failed
+        path: terragrunt/environments/dev/
+      continue-on-error: true
+    
+    - name: ️ Terragrunt Destroy
       working-directory: terragrunt/environments/dev
       run: |
         echo "🗑️ Destroying infrastructure using local backend..."
         echo "🗄️ Using local backend configuration..."
+        
+        if [ "${{ github.event.inputs.force_cleanup }}" == "true" ]; then
+          echo "⚠️  FORCE CLEANUP MODE: Destroying partial/failed infrastructure"
+          echo "🔍 This will clean up any resources that were created before failure"
+        else
+          echo "✅ NORMAL CLEANUP MODE: Destroying successfully deployed infrastructure"
+        fi
         
         # Initialize with current state and destroy
         terragrunt init
@@ -163,8 +232,14 @@ jobs:
         TF_VAR_distribution_name: "devops-assignment-dev"
         TF_VAR_environment: "dev"
     
-    - name: 🧹 Clean State Artifacts
+    - name: 🧹 Clean Success State Artifacts
       uses: geekyeggo/delete-artifact@v5
       with:
         name: terraform-state
+      continue-on-error: true
+    
+    - name: 🧹 Clean Failed State Artifacts
+      uses: geekyeggo/delete-artifact@v5
+      with:
+        name: terraform-state-failed
       continue-on-error: true
