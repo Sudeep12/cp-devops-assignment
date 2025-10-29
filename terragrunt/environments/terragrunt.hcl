@@ -9,16 +9,19 @@ remote_state {
     key    = "${path_relative_to_include()}/terraform.tfstate"
     region = "us-east-1"
     
-    # Optional: Enable state locking with DynamoDB (if table exists)
-    # dynamodb_table = "terraform-locks"
-    
     # Enable encryption
     encrypt = true
+    
+    # Optional: Enable state locking with DynamoDB (if table exists)
+    # dynamodb_table = "terraform-locks"
   }
   generate = {
     path      = "backend.tf"
     if_exists = "overwrite_terragrunt"
   }
+  
+  # Disable S3 bucket updates to avoid interactive prompts
+  disable_bucket_update = true
 }
 
 # Generate provider configuration

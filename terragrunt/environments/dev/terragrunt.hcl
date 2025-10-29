@@ -8,7 +8,7 @@ include "root" {
 
 # Terraform configuration
 terraform {
-  source = "../../../terraform"
+  source = "../../../terraform//"
 }
 
 # Environment-specific inputs
