@@ -2,27 +2,10 @@ name: DevOps Assignment CI/CD Pipeline
 
 on:
   push:
-    branches: [ main ]  # ✅ Trigger only on main
+    branches: [main]
   pull_request:
-    branches: [ main ]  # ✅ Trigger only on main
-  workflow_dispatch:  # ✅ Manual trigger allowed
-    inputs:
-      apply:
-        description: "Run Terraform Apply?"
-        required: true
-        default: "false"
-        type: choice
-        options:
-          - "true"
-          - "false"
-      cleanup:
-        description: "Run Terraform Destroy?"
-        required: false
-        default: "false"
-        type: choice
-        options:
-          - "true"
-          - "false"
+    branches: [main]
+  workflow_dispatch:  # Allow manual triggering
 
 env:
   AWS_REGION: us-east-1
@@ -30,46 +13,46 @@ env:
   TERRAGRUNT_VERSION: 0.50.0
 
 jobs:
-  # Job 1: Infrastructure Plan
+  # Job 1: Infrastructure Deployment
   infrastructure:
-    name: 🏗️ Terraform Plan
+    name: 🏗️ Deploy Infrastructure
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'  # ✅ Only run on main branch
-
+    
+    # Set outputs for the next job
     outputs:
       s3-bucket-name: ${{ steps.terraform-output.outputs.s3_bucket_id }}
       cloudfront-url: ${{ steps.terraform-output.outputs.cloudfront_url }}
-
+    
     steps:
     - name: 📥 Checkout Code
       uses: actions/checkout@v4
-
+    
     - name: 🔧 Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
-
+    
     - name: 🛠️ Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: ${{ env.TERRAFORM_VERSION }}
         terraform_wrapper: false
-
+    
     - name: 📦 Install Terragrunt
       run: |
         wget https://github.com/gruntwork-io/terragrunt/releases/download/v${{ env.TERRAGRUNT_VERSION }}/terragrunt_linux_amd64
         chmod +x terragrunt_linux_amd64
         sudo mv terragrunt_linux_amd64 /usr/local/bin/terragrunt
         terragrunt --version
-
+    
     - name: 🔍 Terraform Format Check
       run: |
         cd terraform
         terraform fmt -check -recursive
       continue-on-error: true
-
+    
     - name: 📋 Terragrunt Plan
       working-directory: terragrunt/environments/dev
       run: |
@@ -78,45 +61,7 @@ jobs:
         TF_VAR_bucket_name: "devops-assignment-products-dev"
         TF_VAR_distribution_name: "devops-assignment-dev"
         TF_VAR_environment: "dev"
-
-    - name: 📤 Get Terraform Outputs
-      id: terraform-output
-      working-directory: terragrunt/environments/dev
-      run: |
-        echo "s3_bucket_id=placeholder" >> $GITHUB_OUTPUT
-        echo "cloudfront_url=placeholder" >> $GITHUB_OUTPUT
-
-  # Job 2: Terraform Apply (Manual only)
-  apply:
-    name: 🚀 Terraform Apply (Manual)
-    runs-on: ubuntu-latest
-    needs: [infrastructure]
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.apply == 'true'  # ✅ Only run manually if apply=true
-
-    steps:
-    - name: 📥 Checkout Code
-      uses: actions/checkout@v4
-
-    - name: 🔧 Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ env.AWS_REGION }}
-
-    - name: 🛠️ Setup Terraform
-      uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_version: ${{ env.TERRAFORM_VERSION }}
-        terraform_wrapper: false
-
-    - name: 📦 Install Terragrunt
-      run: |
-        wget https://github.com/gruntwork-io/terragrunt/releases/download/v${{ env.TERRAGRUNT_VERSION }}/terragrunt_linux_amd64
-        chmod +x terragrunt_linux_amd64
-        sudo mv terragrunt_linux_amd64 /usr/local/bin/terragrunt
-        terragrunt --version
-
+    
     - name: 🚀 Terragrunt Apply
       working-directory: terragrunt/environments/dev
       run: |
@@ -125,36 +70,49 @@ jobs:
         TF_VAR_bucket_name: "devops-assignment-products-dev"
         TF_VAR_distribution_name: "devops-assignment-dev"
         TF_VAR_environment: "dev"
+    
+    - name: 📤 Get Terraform Outputs
+      id: terraform-output
+      working-directory: terragrunt/environments/dev
+      run: |
+        S3_BUCKET=$(terragrunt output -raw s3_bucket_id)
+        CLOUDFRONT_URL=$(terragrunt output -raw cloudfront_url)
+        echo "s3_bucket_id=${S3_BUCKET}" >> $GITHUB_OUTPUT
+        echo "cloudfront_url=${CLOUDFRONT_URL}" >> $GITHUB_OUTPUT
+        echo "Infrastructure outputs:"
+        echo "S3 Bucket: ${S3_BUCKET}"
+        echo "CloudFront URL: ${CLOUDFRONT_URL}"
 
-  # Job 3: Cleanup (Manual only)
+  # Job 2: Cleanup (Only on manual trigger)
   cleanup:
     name: 🧹 Cleanup Resources
     runs-on: ubuntu-latest
+    needs: [infrastructure, code-execution]
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.cleanup == 'true'
     
     steps:
     - name: 📥 Checkout Code
       uses: actions/checkout@v4
-
+    
     - name: 🔧 Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
-
+    
     - name: 🛠️ Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: ${{ env.TERRAFORM_VERSION }}
         terraform_wrapper: false
-
+    
     - name: 📦 Install Terragrunt
       run: |
         wget https://github.com/gruntwork-io/terragrunt/releases/download/v${{ env.TERRAGRUNT_VERSION }}/terragrunt_linux_amd64
         chmod +x terragrunt_linux_amd64
         sudo mv terragrunt_linux_amd64 /usr/local/bin/terragrunt
-
+    
     - name: 🗑️ Terragrunt Destroy
       working-directory: terragrunt/environments/dev
       run: |
